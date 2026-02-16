@@ -71,13 +71,20 @@ pub fn set_steam_game_launch_options<T: AsRef<str>>(
     steam_game_id: usize,
     launch_options: T,
 ) -> Result<(), String> {
+    let launch_options = launch_options.as_ref();
     match get_steam_local_config_vdf_path_by_user_id(steam_user_id) {
         Some(local_config_path) => match VdfValue::load_from_file(&local_config_path) {
             Ok(mut vdf) => {
                 let paths = get_launch_options_vdf_paths_by_game_id(steam_game_id);
-                match vdf.set_value_by_path(&paths, launch_options.as_ref().to_string()) {
+                match vdf.set_value_by_path(&paths, launch_options.to_string()) {
                     Ok(()) => match vdf.write_to_file(local_config_path) {
-                        Ok(_) => Ok(()),
+                        Ok(_) => {
+                            println!(
+                                "write launch_options success user_id:{} game_id:{} launch_options:\"{}\"",
+                                steam_user_id, steam_game_id, launch_options
+                            );
+                            Ok(())
+                        }
                         Err(_) => Err(format!(
                             "Write game launch options failed user_id:{} game_id:{}",
                             steam_user_id, steam_game_id
