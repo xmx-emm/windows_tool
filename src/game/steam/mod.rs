@@ -1,9 +1,15 @@
+//! Steam 客户端数据访问：注册表状态、`localconfig.vdf`、`libraryfolders.vdf`、启动项与游戏语言等。
+//!
+//! **约定**：[`usize`] 类型的 `steam_user_id` 与 `steam_game_id` 分别对应 `userdata` 目录名与 Steam App ID。
+
 pub mod language;
 pub mod user;
 
 use crate::registry::steam::get_steam_active_user_id_by_registry;
+use crate::utils::{CommandHiddenWindowExt, Println};
 use crate::utils::hex::extract_last_field;
 use crate::vdf::{VdfValue, get_steam_local_config_vdf_path_by_user_id};
+use std::process::Command;
 
 // 通过注册表检测steam是否在运行
 /// steam在运行时将会同步到注册表中
@@ -13,6 +19,18 @@ pub fn steam_is_running_state_by_registry() -> bool {
         Some(user_id) => user_id != "0",
         None => false,
     }
+}
+
+/// 通过 `tasklist` 检测 Steam 进程是否存在。
+pub fn steam_is_running_by_tasklist() -> Result<bool, String> {
+    let output = Command::new("tasklist")
+        .with_hidden_window()
+        .args(["/FI", "IMAGENAME eq steam.exe", "/FO", "CSV"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    output.print_ln();
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    Ok(output_str.contains("steam.exe"))
 }
 
 // 获取启动选项路径按游戏id
@@ -120,7 +138,12 @@ pub fn get_steam_game_language(
         Ok(vdf) => match vdf.get_by_path(&get_userappconfig_vdf_paths_by_game_id(steam_game_id)) {
             Some(value) => match value.as_string() {
                 Some(config_store) => {
-                    let bytes = hex::decode(&config_store).unwrap();
+                    let bytes = hex::decode(config_store).map_err(|e| {
+                        format!(
+                            "Steam game language hex decode failed user:{} game_id:{}: {:?}",
+                            steam_user_id, steam_game_id, e
+                        )
+                    })?;
                     match extract_last_field(&bytes) {
                         Some(last_field) => Ok(last_field.to_string()),
                         None => Err("extract_last_field not find".to_string()),
@@ -215,7 +238,7 @@ pub fn get_steam_game_library_folder_by_game_id(steam_game_id: usize) -> Result<
 
 #[cfg(test)]
 mod tests_steam {
-    use crate::steam::get_steam_game_library_folder_by_game_id;
+    use crate::game::steam::get_steam_game_library_folder_by_game_id;
 
     #[test]
     fn test_library_folder() {

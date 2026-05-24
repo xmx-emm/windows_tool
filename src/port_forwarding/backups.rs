@@ -1,12 +1,12 @@
 use crate::port_forwarding::PortForwarding;
-use crate::port_forwarding::command::get_all_ipv4_to_ipv4_port_proxy;
+use crate::port_forwarding::command::get_all_ipv4_to_ipv4_port_proxy_silent;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
 /// 备份资源管理器注册表
 pub fn backups_to_file<T: AsRef<str>>(file_path: T) -> bool {
-    let list = get_all_ipv4_to_ipv4_port_proxy();
+    let list = get_all_ipv4_to_ipv4_port_proxy_silent();
     let serialized = serde_json::to_string(&list).unwrap();
     let path = file_path.as_ref();
     match File::create(path) {

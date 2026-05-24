@@ -1,3 +1,7 @@
+//! Valve KeyValues（VDF）文本格式的解析、遍历与写回文件。
+//!
+//! 入口类型为 `VdfValue`；从字符串解析使用 `parse_vdf_string`（见本模块 `pub use`）。
+
 use indexmap::IndexMap;
 
 mod crud;

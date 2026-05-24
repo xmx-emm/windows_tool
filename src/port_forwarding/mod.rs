@@ -1,51 +1,45 @@
+//! Windows `netsh interface portproxy` 的封装（当前仅 IPv4→IPv4）。
+//!
+//! - **查询**当前规则列表通常**不需要**管理员权限。
+//! - **添加、删除、重置**等写操作一般需要**管理员权限**。
+//!
+//! 子命令概览：`add`、`delete`、`dump`、`reset`、`set`、`show`（详见 `netsh interface portproxy /?`）。
+//!
+//! # 示例
+//!
+//! ```no_run
+//! use windows_tool::port_forwarding::PortForwarding;
+//!
+//! PortForwarding::reset();
+//! let item = PortForwarding::new(("127.0.0.1", 100), ("127.0.0.1", 100));
+//! item.forward();
+//! let _ = item.check();
+//! let items = PortForwarding::get_ipv4_to_ipv4();
+//! println!("{:?}", items);
+//! ```
+
 use crate::port_forwarding::cmd::add_cmd;
 use crate::port_forwarding::ipv::Ipv;
-use crate::utils::{check_ipv4_by_string, run_multiple_commands};
+use crate::utils::{check_ipv4_by_string, run_multiple_commands, RunCommandOptions};
 use serde::{Deserialize, Serialize};
 use std::cmp::{Eq, PartialEq};
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
-/// netsh interface portproxy show all
-/// netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=100  connectaddress=127.1.1.0 connectport=120
-/// netsh interface portproxy delete v4tov4 listenaddress=127.0.0.1 listenport=100 protocol=tcp
-/// 端口代理/端口转发
-/// 通过cmd来获取window的端口转发设置
-/// 添加/删除/修改/重置 操作都需要管理员权限
-/// Tips: 只有获取不需要管理员权限
-
-/// netsh interface portproxy
-/// add            - 在一个表格中添加一个配置项。
-/// delete         - 从一个表格中删除一个配置项。 del
-/// dump           - 显示一个配置脚本。
-/// help           - 显示命令列表。
-/// reset          - 重置端口代理配置状态。
-/// set            - 设置配置信息。
-/// show           - 显示信息。
-/// ```
-/// use windows_tool::port_forwarding::ipv::Ipv;
-/// use windows_tool::port_forwarding::PortForwarding;
-/// PortForwarding::reset();
-/// let item = PortForwarding::new(("127.0.0.1".to_string(),100),("127.0.0.1".to_string(),100));
-/// &item.forward();
-/// &item.check();
-/// let items = PortForwarding::get_ipv4_to_ipv4();
-/// println!("aa {:?}", items)
-/// ```
-///
 pub mod cmd;
 pub mod command;
 pub mod ipv;
 pub mod backups;
-// #[derive(Serialize, Deserialize, Debug)]
-// pub enum IPVType {
-//     IPV4(u8, u8, u8, u8), //127.0.0.1
-//     IPV6(String),         //2001:0db8:85a3:0000:0000:8a2e:0370:7334
-// }
+/// #[derive(Serialize, Deserialize, Debug)]
+/// pub enum IPVType {
+///     IPV4(u8, u8, u8, u8), //127.0.0.1
+///     IPV6(String),         //2001:0db8:85a3:0000:0000:8a2e:0370:7334
+/// }
 
-/// window 端口转发
-/// TODO 目前只支持ipv4端口转发
+/// 单条 IPv4 端口转发规则（监听地址/端口 → 连接地址/端口）。
+///
+/// 当前仅支持 **v4tov4**；IPv6 见模块级说明中的 TODO。
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PortForwarding {
     pub listen: Ipv,  //from 从
@@ -81,7 +75,7 @@ impl PortForwarding {
             .into_iter()
             .map(|x| add_cmd(&x)) //转换为cmd
             .collect::<Vec<String>>();
-        run_multiple_commands(&vs, false, true);
+        run_multiple_commands(&vs, RunCommandOptions::new(false, true, true));
     }
 
     /// 转发端口
