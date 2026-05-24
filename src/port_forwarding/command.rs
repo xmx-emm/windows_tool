@@ -1,6 +1,6 @@
 use crate::port_forwarding::PortForwarding;
 use crate::port_forwarding::cmd::{PORT_PROXY_V4TOV4, RESET_CMD, add_cmd, del_cmd, set_cmd};
-use crate::utils::{Println, check_ipv4_by_string, run_commands};
+use crate::utils::{Println, check_ipv4_by_string, run_commands, RunCommandOptions};
 use ansi_term::Color::Red;
 
 ///
@@ -8,7 +8,7 @@ use ansi_term::Color::Red;
 ///
 pub fn add(forward: &PortForwarding) {
     let cmd = add_cmd(forward);
-    let out = run_commands(&cmd, true, true);
+    let out = run_commands(&cmd, RunCommandOptions::new(true, true, true));
     out.print_ln();
 }
 
@@ -22,7 +22,7 @@ pub fn add(forward: &PortForwarding) {
 /// Require administrator privileges to execute
 pub fn del(address: &String, port: &i64) {
     let cmd = del_cmd(address, port);
-    let out = run_commands(&cmd, true, true);
+    let out = run_commands(&cmd, RunCommandOptions::new(true, true, true));
     out.print_ln();
 }
 
@@ -31,14 +31,14 @@ pub fn del(address: &String, port: &i64) {
 /// Require administrator privileges to execute
 pub fn reset() {
     let cmd = RESET_CMD;
-    let out = run_commands(&cmd.to_string(), true, true);
+    let out = run_commands(&cmd.to_string(), RunCommandOptions::new(true, true, true));
     out.print_ln();
 }
 
 ///设置代理
 pub fn set(port: &PortForwarding) {
     let cmd = set_cmd(port);
-    let out = run_commands(&cmd, true, true);
+    let out = run_commands(&cmd, RunCommandOptions::new(true, true, true));
     out.print_ln();
 }
 
@@ -49,8 +49,14 @@ pub fn set(port: &PortForwarding) {
 /// println!("pp {:?}",pp);
 /// ```
 pub fn get_all_ipv4_to_ipv4_port_proxy() -> Vec<PortForwarding> {
-    let out = run_commands(PORT_PROXY_V4TOV4, true, false);
+    let out = run_commands(PORT_PROXY_V4TOV4, RunCommandOptions::new(true, false, true));
     out.print_ln();
+    from_cmd_load_port_forwarding(&out.to_string())
+}
+
+/// 查询端口代理列表但不打印 netsh 输出（用于文件备份等，避免刷屏或干扰日志）。
+pub fn get_all_ipv4_to_ipv4_port_proxy_silent() -> Vec<PortForwarding> {
+    let out = run_commands(PORT_PROXY_V4TOV4, RunCommandOptions::new(true, false, false));
     from_cmd_load_port_forwarding(&out.to_string())
 }
 
@@ -63,7 +69,8 @@ pub fn get_all_ipv4_to_ipv4_port_proxy() -> Vec<PortForwarding> {
 /// 10.0.0.113      400         192.168.21.4    22
 pub fn from_cmd_load_port_forwarding(cmd_string: &String) -> Vec<PortForwarding> {
     let mut res: Vec<PortForwarding> = Vec::new();
-    for line in cmd_string.split("\r\n") {
+    for line in cmd_string.lines() {
+        let line = line.trim_end();
         let data: Vec<String> = line.split_whitespace().map(|x| x.to_string()).collect();
         if data.len() == 4 {
             let listen_address = data.get(0).unwrap().to_string();
@@ -81,7 +88,8 @@ pub fn from_cmd_load_port_forwarding(cmd_string: &String) -> Vec<PortForwarding>
                     (connect_address, connect_port.unwrap()),
                 );
                 res.push(port);
-            } else {
+            } else if check_ipv4_by_string(&listen_address) {
+                // 表头等也会被拆成 4 段，但首列不是 IPv4；仅对疑似数据行告警。
                 println!("Invalid port found {}", Red.paint(line));
             }
         }

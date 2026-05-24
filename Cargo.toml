@@ -1,19 +1,12 @@
 [package]
 name = "windows_tool"
-version = "0.0.8"
+version = "0.0.9"
 edition = "2024"
-
 authors = ["小萌新 <3209970865@qq.com>"]
 license = "MIT"
 documentation = "https://docs.rs/crate/windows_tool/latest"
 description = """
-一个 Windows 库 可以设置端口代理
-
-elevate 提升权限 管理员权限
-registry 注册表
-port_forwarding 端口转发设置
-steam vdf 格式
-steam apex 启动项设置
+Windows 实用库：提权检测、注册表、IPv4 端口转发、Steam VDF/启动项与部分游戏封装。
 """
 keywords = [
     "windows",
@@ -24,37 +17,43 @@ keywords = [
 ]
 
 [dependencies]
-ansi_term = "0.12.1" #控制台打印带颜色
-chrono = "0.4.42" #时间格式化
-serde = { version = "1.0.223", features = ["derive"], optional = true }#将数据转换成json 字符串用的
-serde_json = "1.0.145"
-indexmap = { version = "2.11.4", optional = true } #仅在vdf中使用
-
-# registry
-lazy_static = { version = "1.5.0", optional = true } #惰性静态
-winreg = { version = "0.55.0", optional = true } #window注册表属性
-
-# port_forwarding
-#转换控制台GBK打印
+ansi_term = "0.12.1"
+chrono = "0.4.42"
+serde = { version = "1.0.223", features = ["derive"], optional = true }
+serde_json = { version = "1.0.145", optional = true }
+indexmap = { version = "2.11.4", optional = true }
+lazy_static = { version = "1.5.0", optional = true }
+winreg = { version = "0.56.0", optional = true }
 encoding_rs = { version = "0.8.35", optional = true }
-hex = "0.4.3"
+hex = { version = "0.4.3", optional = true }
 
 [dependencies.winapi]
 version = "0.3.9"
-features = ["securitybaseapi", "processthreadsapi", "minwindef", "winnt", "winreg", "combaseapi", "knownfolders", "shlobj"]
+features = [
+    "securitybaseapi",
+    "processthreadsapi",
+    "minwindef",
+    "winnt",
+    "winreg",
+    "combaseapi",
+    "knownfolders",
+    "shlobj",
+    "winbase",
+]
 optional = true
-#https://github.com/microsoft/windows-rs/tree/master/crates/samples
-#windows-sys = { version = "0.61.0" }
 
+# `lib.rs` 中仅单元测试 `tests_hex_sample` 使用外部 `hex`；运行时由 `steam` feature 启用同名依赖。
+[dev-dependencies]
+hex = "0.4.3"
 
 [features]
-default = ["elevated", "registry", "port_forwarding", "game"] #默认启用的特性
-game = ["steam"] #游戏
-elevated = ["dep:winapi"] #提权
-registry = ["dep:lazy_static", "dep:winreg"] #注册表编辑
-port_forwarding = ["dep:encoding_rs", "dep:serde"] #端口转发
-vdf = ["dep:winreg", "registry", "dep:indexmap"] # Steam vdf https://developer.valvesoftware.com/wiki/KeyValues
-steam = ["dep:winreg", "registry", "dep:indexmap", "vdf"]
+default = ["elevated", "registry", "port_forwarding", "game"]
+game = ["steam"]
+elevated = ["dep:winapi", "dep:encoding_rs"]
+registry = ["dep:lazy_static", "dep:winreg", "dep:encoding_rs", "dep:winapi"]
+port_forwarding = ["dep:encoding_rs", "dep:serde", "dep:serde_json", "dep:winapi"]
+vdf = ["dep:winreg", "registry", "dep:indexmap"]
+steam = ["dep:winreg", "registry", "dep:indexmap", "vdf", "dep:hex", "dep:serde"]
 
 [package.metadata.docs.rs]
 default-target = "x86_64-pc-windows-msvc"

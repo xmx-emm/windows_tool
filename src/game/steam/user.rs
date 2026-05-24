@@ -1,3 +1,5 @@
+//! 枚举本机 Steam 用户（`userdata` 下含 `localconfig.vdf` 的目录），并从 VDF 构造 [`SteamUser`]。
+
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 use crate::registry::steam::get_steam_path_by_registry;
@@ -30,11 +32,6 @@ impl SteamUser {
                 "UserLocalConfigStore name not found {}",
                 user_id.as_ref()
             ))
-        // } else if avatar.is_none() {
-        //     Err(format!(
-        //         "UserLocalConfigStore avatar not found {}",
-        //         user_id.as_ref()
-        //     ))
         } else {
             let avatar = if avatar.is_none() {
                 "fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb".into() //问号头像

@@ -1,13 +1,13 @@
-use crate::utils::{HIDE_WINDOW_FLAG, Println};
+use crate::utils::{CommandHiddenWindowExt, Println};
 use ansi_term::Color::{Red, Yellow};
 use std::env;
-use std::os::windows::process::CommandExt;
 use std::process::{Command, exit};
 
-/// https://github.com/yandexx/is_elevated
-/// https://www.180it.com/archives/2099/
-/// based on https://stackoverflow.com/a/8196291
-/// Returns a boolean value, indicating whether the current process is elevated.
+/// 若当前进程以**提升的管理员令牌**（UAC 提升后）运行则返回 `true`；否则 `false`。
+///
+/// 参考：[TokenElevation](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ne-winnt-token_information_class)、
+/// [yandexx/is_elevated](https://github.com/yandexx/is_elevated)。
+///
 /// ## Example
 /// ```rust
 /// use windows_tool::elevated::is_elevated;
@@ -38,11 +38,12 @@ pub fn is_elevated() -> bool {
         let result = OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut current_token_ptr);
 
         if result != 0 {
+            let buffer_len = size_of::<TOKEN_ELEVATION>() as u32;
             let result = GetTokenInformation(
                 current_token_ptr,
                 TokenElevation,
                 token_elevation_type_ptr as LPVOID,
-                size_of::<winapi::um::winnt::TOKEN_ELEVATION_TYPE>() as u32,
+                buffer_len,
                 &mut size,
             );
             if result != 0 {
@@ -53,8 +54,9 @@ pub fn is_elevated() -> bool {
     false
 }
 
-/// 执行需要管理员权限的操作，但是会导致没有在管理员权限的文件窗口无法拖动文件到此窗口
-/// 打开一个具有管理员权限的新实例并关闭当前程序
+/// 使用 PowerShell `Start-Process -Verb RunAs` 以管理员权限**再启动一份当前可执行文件**。
+///
+/// **注意**：提权后的新进程可能无法接收从未提权窗口拖入的文件；若 `is_exit` 为 `true` 且用户同意 UAC，当前进程会 `exit(0)`。
 pub fn request_restart_with_privileges_elevate(is_hide_window: bool, is_exit: bool) {
     // 当前用户不是管理员，尝试以管理员权限重新启动此程序
     let current_exe = env::current_exe().expect("Failed to get current executable path");
@@ -64,7 +66,7 @@ pub fn request_restart_with_privileges_elevate(is_hide_window: bool, is_exit: bo
     );
     let mut com = Command::new("powershell");
     if is_hide_window {
-        com.creation_flags(HIDE_WINDOW_FLAG);
+        com.with_hidden_window();
     }
     let output = com
         .arg(format!(

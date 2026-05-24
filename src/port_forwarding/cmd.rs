@@ -29,12 +29,14 @@ pub fn del_cmd(address: &String, port: &i64) -> String {
     )
 }
 
-///netsh interface portproxy set v4tov4
-/// 用法: set v4tov4 [listenport=]<integer>|<servicename>
-/// [connectaddress=]<IPv4 address>|<hostname>
-/// [[connectport=]<integer>|<servicename>]
-/// [[listenaddress=]<IPv4 address>|<hostname>]
-/// [[protocol=]tcp]
+/// `netsh interface portproxy set v4tov4`
+///
+/// 用法（摘自帮助文本，尖括号表示占位）：
+/// `set v4tov4 [listenport=]<integer>|<servicename>`
+/// `[connectaddress=]<IPv4 address>|<hostname>`
+/// `[[connectport=]<integer>|<servicename>]`
+/// `[[listenaddress=]<IPv4 address>|<hostname>]`
+/// `[[protocol=]tcp]`
 /// 参数:
 /// 标记            值
 /// listenport      - IPv4 侦听端口。

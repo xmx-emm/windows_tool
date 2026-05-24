@@ -1,9 +1,8 @@
-use crate::utils::{Println, run_commands};
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::error::Error;
-use winreg::enums::{HKEY_LOCAL_MACHINE, REG_SZ};
-use winreg::{RegKey, RegValue};
+use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WRITE, REG_EXPAND_SZ, REG_SZ};
+use winreg::RegKey;
 
 lazy_static! {
   /// HKEY_LOCAL_MACHINE
@@ -63,74 +62,75 @@ pub fn get_common_folder_state<T: AsRef<str>>(key: T) -> Result<bool, Box<dyn Er
         println!("get_raw_value 错误 {} {}", key, path);
         return Ok(false);
     }
-    let value = &raw_value.unwrap();
-    if value.vtype == REG_SZ {
-        let res = value.to_string();
-        return if res == "Show" {
+    let value = raw_value.unwrap();
+    let res = match value.vtype {
+        REG_SZ | REG_EXPAND_SZ => value.to_string(),
+        _ => {
+            return Err(format!(
+                "ThisPCPolicy 类型非 REG_SZ/REG_EXPAND_SZ: {} {:?}",
+                key, value.vtype
+            )
+            .into());
+        }
+    };
+    let res_trim = res.trim_end_matches('\0').trim();
+    // 与 Explorer 一致：英文 Show/Hide；大小写不敏感以兼容异常写入
+    match res_trim.to_ascii_lowercase().as_str() {
+        "show" => Ok(true),
+        "hide" => Ok(false),
+        _ => {
+            // 误把 UTF-8 当 REG_SZ 写入时读回会变成乱码；仍返回 Ok 以免 get_all_state 丢项，用户切换一次即可修复
+            println!(
+                "ThisPCPolicy 非 Show/Hide（可能已损坏），暂按「显示」处理，请点一次切换以重写: {} = {:?}",
+                key, res_trim
+            );
             Ok(true)
-        } else if res == "Hide" {
-            Ok(false)
-        } else {
-            Err(format!("emme 这个值两个都没匹配到 {} {}", key, res).into())
-        };
+        }
     }
-    Err(format!("值类型错误 !=RegType::REG_SZ {} {:?}", key, value.vtype).into())
 }
 
 pub fn switch_by_api(key: &str, show: bool) -> Result<(), Box<dyn Error>> {
     let path = RegistryCommonFolders
         .get(key)
         .expect(format!("No Folder for key {}", key).as_str());
-    let bytes = (if show { "Show" } else { "Hide" }).as_bytes().to_vec();
-    match RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(path) {
-        Ok(reg_key) => {
-            match reg_key.set_raw_value(
-                "ThisPCPolicy",
-                &RegValue {
-                    vtype: REG_SZ,
-                    bytes,
-                },
-            ) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(e.to_string().into()),
-            }
-        }
+    // 必须用 `set_value` / `ToRegValue`：REG_SZ 在注册表里是 UTF-16LE，不能 `.as_bytes()` 当 REG_SZ 写
+    let policy: &str = if show { "Show" } else { "Hide" };
+    match RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey_with_flags(path, KEY_READ | KEY_WRITE)
+    {
+        Ok(reg_key) => reg_key
+            .set_value("ThisPCPolicy", &policy)
+            .map_err(|e| e.to_string().into()),
         Err(e) => Err(format!("open_subkey 错误 {} {} {}", key, path, e).into()),
     }
 }
 fn switch_by_cmd(key: &str, show: bool) {
-    let bytes = if !show { "Show" } else { "Hide" };
+    // 与 [`switch_by_api`] 一致：显示 → ThisPCPolicy=Show，隐藏 → Hide
+    let policy_value = if show { "Show" } else { "Hide" };
     let path = RegistryCommonFolders
         .get(key)
         .expect(format!("No Folder for key {}", key).as_str());
 
     if key == "3D_OBJECTS" {
+        // 「此电脑」中 3D 对象由 MyComputer\NameSpace\{GUID} 是否存在控制：存在则显示
         let hk = RegKey::predef(HKEY_LOCAL_MACHINE);
         if show {
-            match hk.delete_subkey(path) {
-                Ok(_) => {}
-                Err(e) => {
-                    println!("delete_subkey Error: {}", e)
-                }
-            };
-        } else {
             match hk.create_subkey(path) {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("create_subkey Error: {}", e)
+                    println!("create_subkey Error: {} {}", key, e)
+                }
+            };
+        } else {
+            match hk.delete_subkey(path) {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("delete_subkey Error: {} {}", key, e)
                 }
             };
         }
-    } else {
-        run_commands(
-            format!(
-                "reg add \"HKLM\\{}\" /v ThisPCPolicy /t REG_SZ /d \"{}\" /f",
-                path, bytes
-            ),
-            true,
-            false,
-        )
-        .print_ln();
+    } else if let Err(e) = switch_by_api(key, show) {
+        println!("switch_by_api {} → {} 失败: {}", key, policy_value, e);
     }
 }
 

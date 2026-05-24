@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 
+/// VDF 树中的节点：字符串叶子，或键到子节点的对象（顺序由 [`indexmap::IndexMap`] 保留）。
 #[derive(Debug, PartialEq, Clone)]
 pub enum VdfValue {
     String(String),

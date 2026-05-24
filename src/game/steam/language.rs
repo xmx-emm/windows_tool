@@ -1,8 +1,12 @@
+//! Steam 客户端支持的语言常量与查询（`schinese`、`english` 等）。
+//!
+//! 数据来源见 <https://partner.steamgames.com/doc/store/localization/languages>。
+
 /// Steam 所有的语言列表
 /// 更新日期2025-10-8
-/// https://partner.steamgames.com/doc/store/localization/languages
+/// <https://partner.steamgames.com/doc/store/localization/languages>
 /// ```
-/// use windows_tool::steam::language::SteamLanguage;
+/// use windows_tool::game::steam::language::SteamLanguage;
 /// let w = SteamLanguage::from_language_code("schinese");
 /// println!("w {:#?}",w)
 /// ```
