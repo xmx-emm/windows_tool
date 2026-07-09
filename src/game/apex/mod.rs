@@ -143,13 +143,16 @@ pub fn get_apex_depot_download_folder_path(depot: usize) -> Option<PathBuf> {
     }
 }
 
+/// Steam：返回 depot 下载目录；EA：无独立 depot 下载路径（语音包由 EA App 直接下到安装目录），返回 `None`。
+///
+/// `ea_user_id` 保留以兼容调用方签名，EA 分支不使用。
 pub fn get_apex_download_folder_path_by_platform(
     depot: usize,
     platform: Option<&str>,
-    ea_user_id: Option<&str>,
+    _ea_user_id: Option<&str>,
 ) -> Option<PathBuf> {
     match platform.unwrap_or("steam").to_ascii_lowercase().as_str() {
-        "ea" => ea_user_id.and_then(get_apex_audio_folder_path_ea),
+        "ea" => None,
         _ => get_apex_depot_download_folder_path(depot),
     }
 }

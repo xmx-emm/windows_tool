@@ -40,7 +40,7 @@ pub mod backups;
 /// 单条 IPv4 端口转发规则（监听地址/端口 → 连接地址/端口）。
 ///
 /// 当前仅支持 **v4tov4**；IPv6 见模块级说明中的 TODO。
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PortForwarding {
     pub listen: Ipv,  //from 从
     pub connect: Ipv, //to 到
