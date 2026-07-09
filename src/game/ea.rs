@@ -51,7 +51,9 @@ pub struct EaDesktopUser {
 pub fn ea_desktop_dir() -> Result<PathBuf, String> {
     let local = std::env::var("LOCALAPPDATA")
         .map_err(|_| "未设置 LOCALAPPDATA（仅 Windows 支持 EA Desktop）".to_string())?;
-    Ok(PathBuf::from(local).join("Electronic Arts").join("EA Desktop"))
+    Ok(PathBuf::from(local)
+        .join("Electronic Arts")
+        .join("EA Desktop"))
 }
 
 fn user_ini_path(ea_user_id: &str) -> Result<PathBuf, String> {
@@ -106,20 +108,35 @@ fn avatar_from_ini(lower: &HashMap<String, String>) -> String {
 }
 
 fn apex_cmd_line_index(lines: &[(String, String)]) -> Option<usize> {
-    lines.iter().position(|(k, _)| k.eq_ignore_ascii_case(APEX_CMD_KEY_LOWER))
+    lines
+        .iter()
+        .position(|(k, _)| k.eq_ignore_ascii_case(APEX_CMD_KEY_LOWER))
 }
 
 fn read_user_ini(path: &Path) -> Result<Vec<(String, String)>, String> {
-    let content = fs::read_to_string(path).map_err(|e| format!("读取 {:?}: {}", path, e))?;
+    let content = fs::read_to_string(path).map_err(|e| {
+        format!(
+            "读取 EA 用户配置失败 {}: {}（请确认 EA Desktop 已登录过该账户）",
+            path.display(),
+            e
+        )
+    })?;
     Ok(parse_ini_lines(&content))
 }
 
 fn write_user_ini(path: &Path, lines: &[(String, String)]) -> Result<(), String> {
+    use crate::utils::filesystem::write_text_file_atomic;
     let out: String = lines
         .iter()
         .map(|(k, v)| format!("{}={}\n", k, v))
         .collect();
-    fs::write(path, out).map_err(|e| format!("写入 {:?}: {}", path, e))
+    write_text_file_atomic(path, &out).map_err(|e| {
+        format!(
+            "写入 EA 启动项失败 {}: {}（请完全退出 EA Desktop 后重试）",
+            path.display(),
+            e
+        )
+    })
 }
 
 fn nuchash_from_line(line: &str) -> Option<String> {
@@ -206,9 +223,7 @@ fn user_avatar_url_from_line(line: &str) -> Option<String> {
     let https_start = before.rfind("https://")?;
     let rest = line.get(https_start..)?;
     let end = rest
-        .find(|c: char| {
-            c.is_whitespace() || matches!(c, '"' | '\'' | '<' | ']')
-        })
+        .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '<' | ']'))
         .unwrap_or(rest.len());
     let mut url = rest
         .get(..end)?
@@ -284,9 +299,7 @@ fn tail_from_last_nuchash<'a>(text: &'a str, hash: &str) -> Option<&'a str> {
 
 fn first_avatar_after_nuchash(text: &str, hash: &str) -> Option<String> {
     let tail = tail_from_last_nuchash(text, hash)?;
-    tail
-        .lines()
-        .find_map(user_avatar_url_from_line)
+    tail.lines().find_map(user_avatar_url_from_line)
 }
 
 fn first_persona_after_nuchash(text: &str, hash: &str) -> Option<String> {
@@ -399,7 +412,7 @@ pub fn get_ea_desktop_users() -> Result<Vec<EaDesktopUser>, String> {
     let mut users = Vec::new();
     for ent in fs::read_dir(&dir)
         .map_err(|e| format!("读取 EA Desktop 目录失败: {}", e))?
-            .flatten()
+        .flatten()
     {
         let fname = ent.file_name().to_string_lossy().into_owned();
         let Some(ini_id) = fname
@@ -463,6 +476,9 @@ pub fn get_apex_launch_option_ea(ea_user_id: &str) -> Result<String, String> {
 }
 
 pub fn set_apex_launch_option_ea(ea_user_id: &str, launch_option: &str) -> Result<(), String> {
+    if ea_user_id.is_empty() {
+        return Err("EA 用户 id 为空".to_string());
+    }
     let path = user_ini_path(ea_user_id)?;
     let mut lines = read_user_ini(&path)?;
     let key = "user.gamecommandline.origin.ofr.50.0002694";
@@ -470,5 +486,10 @@ pub fn set_apex_launch_option_ea(ea_user_id: &str, launch_option: &str) -> Resul
         Some(i) => lines[i].1 = launch_option.to_string(),
         None => lines.push((key.to_string(), launch_option.to_string())),
     }
-    write_user_ini(&path, &lines)
+    write_user_ini(&path, &lines)?;
+    println!(
+        "write ea launch_options success user_id:{} launch_options:\"{}\"",
+        ea_user_id, launch_option
+    );
+    Ok(())
 }

@@ -54,35 +54,47 @@ pub fn is_elevated() -> bool {
     false
 }
 
+/// PowerShell 单引号字符串转义：`'` → `''`。
+fn escape_powershell_single_quoted(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
 /// 使用 PowerShell `Start-Process -Verb RunAs` 以管理员权限**再启动一份当前可执行文件**。
 ///
 /// **注意**：提权后的新进程可能无法接收从未提权窗口拖入的文件；若 `is_exit` 为 `true` 且用户同意 UAC，当前进程会 `exit(0)`。
 pub fn request_restart_with_privileges_elevate(is_hide_window: bool, is_exit: bool) {
-    // 当前用户不是管理员，尝试以管理员权限重新启动此程序
     let current_exe = env::current_exe().expect("Failed to get current executable path");
+    let exe_path = current_exe.display().to_string();
     println!(
         "current executable path is {}",
-        Yellow.paint(current_exe.display().to_string())
+        Yellow.paint(&exe_path)
     );
+
+    // -Verb RunAs 必须作为 Start-Process 的参数，不能挂在外层 powershell.exe 上。
+    let script = format!(
+        "Start-Process -FilePath '{}' -Verb RunAs",
+        escape_powershell_single_quoted(&exe_path)
+    );
+
     let mut com = Command::new("powershell");
     if is_hide_window {
         com.with_hidden_window();
     }
     let output = com
-        .arg(format!(
-            "powershell -Command \"Start-Process '{}'\" -Verb RunAs",
-            current_exe.display()
-        ))
+        .args(["-NoProfile", "-Command", &script])
         .output()
         .expect("Failed to execute command");
     output.print_ln();
     let status = output.status;
     if is_exit {
-        if status.success() && status.code().unwrap() == 0 {
-            //确认重启到管理员
+        if status.success() {
             exit(0);
         } else {
-            println!("{} {}", Red.paint("用户取消授权!"), status.code().unwrap());
+            println!(
+                "{} {}",
+                Red.paint("用户取消授权!"),
+                status.code().unwrap_or(-1)
+            );
         }
     }
 }

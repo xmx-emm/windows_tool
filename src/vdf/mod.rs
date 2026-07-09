@@ -245,5 +245,36 @@ mod tests_vdf {
         assert!(result.is_some());
         assert_eq!(result.unwrap().as_string(), Some("new_value"));
     }
-    
+
+    #[test]
+    fn test_set_by_path_creates_missing_parents() {
+        let mut root = VdfValue::new_object();
+        let path = [
+            "UserLocalConfigStore",
+            "Software",
+            "Valve",
+            "Steam",
+            "apps",
+            "1172470",
+            "LaunchOptions",
+        ];
+        root.set_by_path(&path, VdfValue::new_string("-novid"))
+            .unwrap();
+
+        assert_eq!(
+            root.get_by_path(&path).and_then(|v| v.as_string()),
+            Some("-novid")
+        );
+    }
+
+    #[test]
+    fn test_set_by_path_rejects_string_mid_path() {
+        let mut root = VdfValue::new_object();
+        root.insert("apps", VdfValue::new_string("not-an-object"))
+            .unwrap();
+        let err = root
+            .set_by_path(&["apps", "1172470", "LaunchOptions"], VdfValue::new_string("x"))
+            .unwrap_err();
+        assert!(err.contains("not an object"));
+    }
 }
