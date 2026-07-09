@@ -18,5 +18,5 @@ pub use command::{
     CommandHiddenWindowExt, RunCommandOptions,
 };
 pub use net::check_ipv4_by_string;
-pub use output::Println;
+pub use output::{decode_process_output, Println};
 pub use time::{now_ymd, now_ymd_hms};

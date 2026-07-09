@@ -60,26 +60,28 @@ pub fn get_userappconfig_vdf_paths_by_game_id(steam_game_id: usize) -> Vec<Strin
 }
 
 // 获取Steam游戏启动选项 按游戏id和steam用户id
-/// 从localconfig.vdf加载设置
+/// 从localconfig.vdf加载设置。
+/// 若尚未写入过该游戏的 `LaunchOptions`（路径不存在），返回空字符串而非错误。
 pub fn get_steam_game_launch_options(
     steam_user_id: usize,
     steam_game_id: usize,
 ) -> Result<String, String> {
-    match VdfValue::load_localconfig_vdf_by_user_id(steam_user_id) {
-        Ok(vdf) => match vdf.get_by_path(&get_launch_options_vdf_paths_by_game_id(steam_game_id)) {
-            Some(value) => match value.as_string() {
-                Some(config_store) => Ok(config_store.to_string()),
-                None => Err(format!(
-                    "Steam game launch options not a string user:{} \tgame_id:{}",
-                    steam_user_id, steam_game_id,
-                )),
-            },
+    let vdf = VdfValue::load_localconfig_vdf_by_user_id(steam_user_id).map_err(|e| {
+        format!(
+            "读取 Steam localconfig.vdf 失败 user:{} game_id:{}: {}",
+            steam_user_id, steam_game_id, e
+        )
+    })?;
+    match vdf.get_by_path(&get_launch_options_vdf_paths_by_game_id(steam_game_id)) {
+        Some(value) => match value.as_string() {
+            Some(config_store) => Ok(config_store.to_string()),
             None => Err(format!(
-                "launch_options Steam game config store get value user:{} \tgame_id:{} ",
+                "Steam 启动项节点不是字符串 user:{} game_id:{}",
                 steam_user_id, steam_game_id,
             )),
         },
-        Err(e) => Err(format!("Steam game launch options doesn't exist {}", e)),
+        // 从未玩过 / 从未设置过启动项：视为空，便于首次应用创建节点。
+        None => Ok(String::new()),
     }
 }
 
@@ -90,40 +92,49 @@ pub fn set_steam_game_launch_options<T: AsRef<str>>(
     launch_options: T,
 ) -> Result<(), String> {
     let launch_options = launch_options.as_ref();
-    match get_steam_local_config_vdf_path_by_user_id(steam_user_id) {
-        Some(local_config_path) => match VdfValue::load_from_file(&local_config_path) {
-            Ok(mut vdf) => {
-                let paths = get_launch_options_vdf_paths_by_game_id(steam_game_id);
-                match vdf.set_value_by_path(&paths, launch_options.to_string()) {
-                    Ok(()) => match vdf.write_to_file(local_config_path) {
-                        Ok(_) => {
-                            println!(
-                                "write launch_options success user_id:{} game_id:{} launch_options:\"{}\"",
-                                steam_user_id, steam_game_id, launch_options
-                            );
-                            Ok(())
-                        }
-                        Err(_) => Err(format!(
-                            "Write game launch options failed user_id:{} game_id:{}",
-                            steam_user_id, steam_game_id
-                        )),
-                    },
-                    Err(e) => Err(format!(
-                        "set_value_by_path Steam game launch options doesn't exist {}",
-                        e
-                    )),
-                }
-            }
-            Err(e) => Err(format!(
-                "set_steam_game_launch_options Steam game launch options doesn't exist {}",
-                e
-            )),
-        },
-        None => Err(format!(
-            "set_steam_game_launch_options user_id:{} not find",
-            steam_user_id
-        )),
+    let local_config_path = get_steam_local_config_vdf_path_by_user_id(steam_user_id)
+        .ok_or_else(|| {
+            format!(
+                "未找到 Steam 安装路径或用户目录 user_id:{}（请确认已安装 Steam 并登录过该账户）",
+                steam_user_id
+            )
+        })?;
+
+    if !local_config_path.is_file() {
+        return Err(format!(
+            "未找到 Steam 用户配置文件: {}（请先在 Steam 登录该账户至少一次）",
+            local_config_path.display()
+        ));
     }
+
+    let mut vdf = VdfValue::load_from_file(&local_config_path).map_err(|e| {
+        format!(
+            "加载 Steam localconfig.vdf 失败 user_id:{}: {}",
+            steam_user_id, e
+        )
+    })?;
+
+    let paths = get_launch_options_vdf_paths_by_game_id(steam_game_id);
+    vdf.set_value_by_path(&paths, launch_options.to_string())
+        .map_err(|e| {
+            format!(
+                "写入 Steam 启动项节点失败 user_id:{} game_id:{}: {}",
+                steam_user_id, steam_game_id, e
+            )
+        })?;
+
+    vdf.write_to_file(&local_config_path).map_err(|e| {
+        format!(
+            "保存 Steam localconfig.vdf 失败 user_id:{} game_id:{}: {}",
+            steam_user_id, steam_game_id, e
+        )
+    })?;
+
+    println!(
+        "write launch_options success user_id:{} game_id:{} launch_options:\"{}\"",
+        steam_user_id, steam_game_id, launch_options
+    );
+    Ok(())
 }
 
 //获取Steam游戏语言 按游戏id,从localconfig.vdf里面

@@ -1,4 +1,5 @@
 use crate::registry::steam::get_steam_path_by_registry;
+use crate::utils::filesystem::write_text_file_atomic;
 use crate::vdf::{VdfValue, parse_vdf_string};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,33 +7,29 @@ use std::path::{Path, PathBuf};
 impl VdfValue {
     /// 从文件加载vdf数据
     pub fn load_from_file<P: AsRef<Path>>(file_path: P) -> Result<VdfValue, String> {
-        match fs::read_to_string(&file_path.as_ref()) {
+        let path = file_path.as_ref();
+        if !path.is_file() {
+            return Err(format!(
+                "VDF 文件不存在: {}（请确认 Steam 用户目录完整）",
+                path.display()
+            ));
+        }
+        match fs::read_to_string(path) {
             Ok(content) => match parse_vdf_string(&content) {
                 Ok(vdf) => Ok(vdf),
                 Err(e) => Err(format!(
-                    "Failed to parse VDF file {} \n\t{}",
-                    file_path.as_ref().to_str().unwrap(),
+                    "解析 VDF 失败 {}: {}",
+                    path.display(),
                     e
                 )),
             },
-            Err(e) => Err(format!("Could not read from file: {}", e)),
+            Err(e) => Err(format!("读取 VDF 失败 {}: {}", path.display(), e)),
         }
     }
 
-    /// 写入数据到文件
+    /// 写入数据到文件（原子替换，并处理只读属性）
     pub fn write_to_file<P: AsRef<Path>>(&self, file_path: P) -> Result<(), String> {
-        let path = file_path.as_ref();
-        match fs::write(path, self.to_string().as_bytes()) {
-            Ok(_) => match fs::exists(path) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(format!(
-                    "Cannot write to file {} {}",
-                    path.to_str().unwrap(),
-                    e
-                )),
-            },
-            Err(e) => Err(format!("write_to_file error {:?} {}", path, e)),
-        }
+        write_text_file_atomic(file_path.as_ref(), &self.to_string())
     }
 
     // 输入用户id从文件获取localconfig vdf数据

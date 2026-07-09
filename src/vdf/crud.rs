@@ -100,7 +100,7 @@ impl VdfValue {
         self.set_by_path(path, VdfValue::Object(value))
     }
 
-    // 通过路径列表设置值
+    // 通过路径列表设置值；中间缺失的对象节点会自动创建（例如首次写入某游戏的 LaunchOptions）。
     pub fn set_by_path<T: AsRef<str>>(
         &mut self,
         path: &[T],
@@ -111,20 +111,42 @@ impl VdfValue {
             return Ok(());
         }
 
-        // 获取父对象
-        let parent_path = &path[..path.len() - 1];
-        let key = &path[path.len() - 1];
+        let mut current = self;
+        for (i, segment) in path.iter().enumerate() {
+            let key = segment.as_ref();
+            let is_leaf = i + 1 == path.len();
 
-        if let Some(parent) = self.get_mut_by_path(parent_path) {
-            if let VdfValue::Object(map) = parent {
-                map.insert(key.as_ref().to_string(), Box::new(value));
-                Ok(())
-            } else {
-                Err("Parent is not an object".to_string())
+            let VdfValue::Object(map) = current else {
+                return Err(format!(
+                    "VDF path segment '{}' parent is not an object",
+                    key
+                ));
+            };
+
+            if is_leaf {
+                map.insert(key.to_string(), Box::new(value));
+                return Ok(());
             }
-        } else {
-            Err("Path not found".to_string())
+
+            if !map.contains_key(key) {
+                map.insert(key.to_string(), Box::new(VdfValue::new_object()));
+            }
+
+            let child = map.get_mut(key).ok_or_else(|| {
+                format!("VDF path segment '{}' missing after insert", key)
+            })?;
+
+            if !matches!(child.as_ref(), VdfValue::Object(_)) {
+                return Err(format!(
+                    "VDF path segment '{}' exists but is not an object",
+                    key
+                ));
+            }
+
+            current = child.as_mut();
         }
+
+        Ok(())
     }
 
     // 检查路径是否存在

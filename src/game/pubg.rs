@@ -72,13 +72,29 @@ pub fn check_pubg_skip_intro_movies_disabled() -> Result<bool, String> {
 pub fn set_pubg_skip_intro_movies_disabled(disabled: bool) -> Result<(), String> {
     let (movies, movies_disabled) = pubg_movies_paths()?;
 
-    // 两个目录同时存在一般表示之前操作异常或用户手动处理过。
+    // 如果 Movies 和 Movies_disabled 都存在，优先保留 Movies，删除 Movies_disabled，并重新尝试一次（只做一次，避免递归/无限循环）
     if movies.exists() && movies_disabled.exists() {
-        return Err(format!(
-            "Movies 与 Movies_disabled 同时存在，无法确定状态: movies={} movies_disabled={}",
-            movies.display(),
-            movies_disabled.display()
-        ));
+        // 尝试删除 Movies_disabled
+        if let Err(e) = if movies_disabled.is_dir() {
+            fs::remove_dir_all(&movies_disabled)
+        } else {
+            fs::remove_file(&movies_disabled)
+        } {
+            return Err(format!(
+                "Movies 与 Movies_disabled 同时存在，尝试删除 Movies_disabled 时出错: {}，movies={} movies_disabled={}",
+                e,
+                movies.display(),
+                movies_disabled.display()
+            ));
+        }
+        // 删除后再检查，避免无限循环，只重试一次
+        if movies.exists() && movies_disabled.exists() {
+            return Err(format!(
+                "Movies 与 Movies_disabled 同时存在且无法删除 Movies_disabled: movies={} movies_disabled={}",
+                movies.display(),
+                movies_disabled.display()
+            ));
+        }
     }
 
     if disabled {

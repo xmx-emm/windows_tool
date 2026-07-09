@@ -1,3 +1,4 @@
+use crate::utils::output::decode_process_output;
 use ansi_term::Color::Yellow;
 use std::os::windows::process::CommandExt;
 use std::process::{Command, Output};
@@ -39,25 +40,30 @@ impl RunCommandOptions {
     }
 }
 
+/// PowerShell 单引号字符串转义：`'` → `''`。
+fn escape_powershell_single_quoted(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
 /// 运行命令：非提权时使用 `cmd /C`，避免经 PowerShell 转发导致 `netsh` 等本地化输出被错误转码（打印/日志乱码）。
-/// 提权时仍通过 PowerShell `Start-Process -Verb RunAs` 拉起 `cmd /C …`。
-/// /C 执行后退出；/K 保留窗口（本函数未使用）。
+/// 提权时通过 PowerShell `Start-Process -Verb RunAs` 拉起 `cmd /C …`（`-Wait` 等待完成）。
 pub fn run_commands<T: AsRef<str>>(cmd: T, opts: RunCommandOptions) -> Output {
     let text_ref = cmd.as_ref();
 
     if opts.use_admin {
-        let arg = format!(
-            "powershell -Command \"Start-Process cmd '/C {}'\" -Verb RunAs",
-            text_ref
+        // -Verb RunAs 必须作为 Start-Process 的参数，不能挂在外层 powershell.exe 上。
+        let script = format!(
+            "Start-Process -FilePath 'cmd.exe' -ArgumentList '/C','{}' -Verb RunAs -Wait",
+            escape_powershell_single_quoted(text_ref)
         );
         let mut com = Command::new("powershell");
         if opts.hide_window {
             com.with_hidden_window();
         }
         if opts.print_command {
-            println!("Running command: {}", Yellow.paint(&arg));
+            println!("Running command: {}", Yellow.paint(&script));
         }
-        com.arg(arg)
+        com.args(["-NoProfile", "-Command", &script])
             .output()
             .unwrap_or_else(|_| panic!("run_cmd_by_admin error {}", text_ref))
     } else {
@@ -98,10 +104,10 @@ pub fn run_cmd(args: &[&str]) -> Result<String, String> {
         .map_err(|e| format!("执行命令失败: {}", e))?;
 
     if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        Ok(decode_process_output(&output.stdout))
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = decode_process_output(&output.stderr);
+        let stdout = decode_process_output(&output.stdout);
         Err(if stderr.is_empty() { stdout } else { stderr })
     }
 }
@@ -114,9 +120,8 @@ pub fn run_powershell(script: &str) -> Result<String, String> {
         .map_err(|e| format!("执行PowerShell失败: {}", e))?;
 
     if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        Ok(decode_process_output(&output.stdout))
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Err(stderr)
+        Err(decode_process_output(&output.stderr))
     }
 }
