@@ -69,12 +69,12 @@ mod tests_port_forwarding {
         assert!(check_ipv4_by_string("127.0.0.1"));
         assert!(!check_ipv4_by_string("asef.asef.0.1"));
         assert!(!check_ipv4_by_string("12.0.0"));
-        PortForwarding::reset();
+        PortForwarding::reset().unwrap();
         let item = PortForwarding::new(
             ("127.0.0.1".to_string(), 100),
             ("127.0.0.1".to_string(), 666),
         );
-        item.forward();
+        item.forward().unwrap();
         let p = PortForwarding::get_ipv4_to_ipv4();
         println!("ipv4_to_ipv4 {:?}", p);
         println!("item.check {}", item.check());
@@ -88,7 +88,7 @@ mod tests_port_forwarding {
             "netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=100  connectaddress=127.0.0.1 connectport=108",
             "netsh interface portproxy show v4tov4",
         ];
-        let out = run_multiple_commands(&vl, RunCommandOptions::new(true, true, true));
+        let out = run_multiple_commands(&vl, RunCommandOptions::new(true, true, true)).unwrap();
         out.print_ln()
     }
 }

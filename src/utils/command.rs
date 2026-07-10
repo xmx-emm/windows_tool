@@ -47,7 +47,7 @@ fn escape_powershell_single_quoted(s: &str) -> String {
 
 /// 运行命令：非提权时使用 `cmd /C`，避免经 PowerShell 转发导致 `netsh` 等本地化输出被错误转码（打印/日志乱码）。
 /// 提权时通过 PowerShell `Start-Process -Verb RunAs` 拉起 `cmd /C …`（`-Wait` 等待完成）。
-pub fn run_commands<T: AsRef<str>>(cmd: T, opts: RunCommandOptions) -> Output {
+pub fn run_commands<T: AsRef<str>>(cmd: T, opts: RunCommandOptions) -> Result<Output, String> {
     let text_ref = cmd.as_ref();
 
     if opts.use_admin {
@@ -65,7 +65,7 @@ pub fn run_commands<T: AsRef<str>>(cmd: T, opts: RunCommandOptions) -> Output {
         }
         com.args(["-NoProfile", "-Command", &script])
             .output()
-            .unwrap_or_else(|_| panic!("run_cmd_by_admin error {}", text_ref))
+            .map_err(|e| format!("run_cmd_by_admin error {}: {}", text_ref, e))
     } else {
         let mut com = Command::new("cmd.exe");
         if opts.hide_window {
@@ -76,17 +76,17 @@ pub fn run_commands<T: AsRef<str>>(cmd: T, opts: RunCommandOptions) -> Output {
         }
         com.args(["/C", text_ref])
             .output()
-            .unwrap_or_else(|_| panic!("run_commands error {}", text_ref))
+            .map_err(|e| format!("run_commands error {}: {}", text_ref, e))
     }
 }
 
 /// 运行 `tasklist` 等进程探测命令：等价于 [`run_commands`] + [`RunCommandOptions::tasklist`]。
-pub fn run_tasklist_query<T: AsRef<str>>(cmd: T) -> Output {
+pub fn run_tasklist_query<T: AsRef<str>>(cmd: T) -> Result<Output, String> {
     run_commands(cmd, RunCommandOptions::tasklist())
 }
 
 /// 运行多条命令
-pub fn run_multiple_commands<S: AsRef<str>>(cmds: &[S], opts: RunCommandOptions) -> Output {
+pub fn run_multiple_commands<S: AsRef<str>>(cmds: &[S], opts: RunCommandOptions) -> Result<Output, String> {
     let cmd_str = cmds
         .iter()
         .map(|s| s.as_ref())

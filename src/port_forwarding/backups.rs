@@ -4,44 +4,24 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
-/// 备份资源管理器注册表
-pub fn backups_to_file<T: AsRef<str>>(file_path: T) -> bool {
+/// 备份端口转发到文件
+pub fn backups_to_file<T: AsRef<str>>(file_path: T) -> Result<bool, String> {
     let list = get_all_ipv4_to_ipv4_port_proxy_silent();
-    let serialized = serde_json::to_string(&list).unwrap();
+    let serialized =
+        serde_json::to_string(&list).map_err(|e| format!("序列化端口转发失败: {}", e))?;
     let path = file_path.as_ref();
-    match File::create(path) {
-        Ok(mut file) => match file.write_all(serialized.as_bytes()) {
-            Ok(_) => Path::new(path).is_file(),
-            Err(_) => {
-                println!("Failed to write file {}", path);
-                false
-            }
-        },
-        Err(_) => {
-            println!("Failed to create file {}", path);
-            false
-        }
-    }
+    let mut file =
+        File::create(path).map_err(|e| format!("Failed to create file {}: {}", path, e))?;
+    file.write_all(serialized.as_bytes())
+        .map_err(|e| format!("Failed to write file {}: {}", path, e))?;
+    Ok(Path::new(path).is_file())
 }
 
-pub fn load_by_file<T: AsRef<str>>(file_path: T) -> Option<Vec<PortForwarding>> {
+pub fn load_by_file<T: AsRef<str>>(file_path: T) -> Result<Vec<PortForwarding>, String> {
     let path = file_path.as_ref();
-    match File::open(path) {
-        Ok(mut file) => {
-            let mut content = String::new();
-            match file.read_to_string(&mut content) {
-                Ok(_) => {
-                    let deserialized: Vec<PortForwarding> = serde_json::from_str(&content).unwrap();
-                    return Some(deserialized);
-                }
-                Err(_) => {
-                    println!("Failed to read file {}", path);
-                }
-            }
-        }
-        Err(_) => {
-            println!("Failed to open file {}", path);
-        }
-    }
-    None
+    let mut file = File::open(path).map_err(|e| format!("Failed to open file {}: {}", path, e))?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)
+        .map_err(|e| format!("Failed to read file {}: {}", path, e))?;
+    serde_json::from_str(&content).map_err(|e| format!("端口转发 JSON 解析失败: {}", e))
 }

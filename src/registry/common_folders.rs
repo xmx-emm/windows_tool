@@ -33,11 +33,25 @@ lazy_static! {
   };
 }
 
+/// 已知常用文件夹键名（与 `RegistryCommonFolders` 一致）。
+pub fn known_common_folder_keys() -> Vec<&'static str> {
+    RegistryCommonFolders.keys().map(|k| k.as_str()).collect()
+}
+
+pub fn is_known_common_folder_key(key: &str) -> bool {
+    RegistryCommonFolders.contains_key(key)
+}
+
+fn folder_path(key: &str) -> Result<&'static str, Box<dyn Error>> {
+    RegistryCommonFolders
+        .get(key)
+        .map(|s| s.as_str())
+        .ok_or_else(|| format!("未知常用文件夹 key: {}", key).into())
+}
+
 fn get_3d_objects() -> Result<bool, Box<dyn Error>> {
     let hk = RegKey::predef(HKEY_LOCAL_MACHINE);
-    let key = RegistryCommonFolders
-        .get("3D_OBJECTS")
-        .expect("failed to get 3D_OBJECTS");
+    let key = folder_path("3D_OBJECTS")?;
     Ok(hk.open_subkey(key).is_ok())
 }
 
@@ -47,28 +61,27 @@ pub fn get_common_folder_state<T: AsRef<str>>(key: T) -> Result<bool, Box<dyn Er
     if key == "3D_OBJECTS" {
         return get_3d_objects();
     }
-    let path = RegistryCommonFolders
-        .get(key)
-        .expect(format!("No Folder for key {}", key).as_str());
+    let path = folder_path(key)?;
 
     let reg_key = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(path);
     if reg_key.is_err() {
         return Err(format!("open_subkey 错误 {} {}", key, path).into());
     }
 
-    let raw_value = reg_key.unwrap().get_raw_value("ThisPCPolicy");
-    if raw_value.is_err() {
-        //没有值,在文档上面遇到过
-        println!("get_raw_value 错误 {} {}", key, path);
-        return Ok(false);
-    }
-    let value = raw_value.unwrap();
-    let res = match value.vtype {
-        REG_SZ | REG_EXPAND_SZ => value.to_string(),
+    let raw_value = match reg_key?.get_raw_value("ThisPCPolicy") {
+        Ok(v) => v,
+        Err(_) => {
+            //没有值,在文档上面遇到过
+            println!("get_raw_value 错误 {} {}", key, path);
+            return Ok(false);
+        }
+    };
+    let res = match raw_value.vtype {
+        REG_SZ | REG_EXPAND_SZ => raw_value.to_string(),
         _ => {
             return Err(format!(
                 "ThisPCPolicy 类型非 REG_SZ/REG_EXPAND_SZ: {} {:?}",
-                key, value.vtype
+                key, raw_value.vtype
             )
             .into());
         }
@@ -90,9 +103,7 @@ pub fn get_common_folder_state<T: AsRef<str>>(key: T) -> Result<bool, Box<dyn Er
 }
 
 pub fn switch_by_api(key: &str, show: bool) -> Result<(), Box<dyn Error>> {
-    let path = RegistryCommonFolders
-        .get(key)
-        .expect(format!("No Folder for key {}", key).as_str());
+    let path = folder_path(key)?;
     // 必须用 `set_value` / `ToRegValue`：REG_SZ 在注册表里是 UTF-16LE，不能 `.as_bytes()` 当 REG_SZ 写
     let policy: &str = if show { "Show" } else { "Hide" };
     match RegKey::predef(HKEY_LOCAL_MACHINE)
@@ -104,45 +115,34 @@ pub fn switch_by_api(key: &str, show: bool) -> Result<(), Box<dyn Error>> {
         Err(e) => Err(format!("open_subkey 错误 {} {} {}", key, path, e).into()),
     }
 }
-fn switch_by_cmd(key: &str, show: bool) {
+
+fn switch_by_cmd(key: &str, show: bool) -> Result<(), Box<dyn Error>> {
     // 与 [`switch_by_api`] 一致：显示 → ThisPCPolicy=Show，隐藏 → Hide
-    let policy_value = if show { "Show" } else { "Hide" };
-    let path = RegistryCommonFolders
-        .get(key)
-        .expect(format!("No Folder for key {}", key).as_str());
+    let path = folder_path(key)?;
 
     if key == "3D_OBJECTS" {
         // 「此电脑」中 3D 对象由 MyComputer\NameSpace\{GUID} 是否存在控制：存在则显示
         let hk = RegKey::predef(HKEY_LOCAL_MACHINE);
         if show {
-            match hk.create_subkey(path) {
-                Ok(_) => {}
-                Err(e) => {
-                    println!("create_subkey Error: {} {}", key, e)
-                }
-            };
+            hk.create_subkey(path)
+                .map(|_| ())
+                .map_err(|e| format!("create_subkey Error: {} {}", key, e).into())
         } else {
-            match hk.delete_subkey(path) {
-                Ok(_) => {}
-                Err(e) => {
-                    println!("delete_subkey Error: {} {}", key, e)
-                }
-            };
+            hk.delete_subkey(path)
+                .map_err(|e| format!("delete_subkey Error: {} {}", key, e).into())
         }
-    } else if let Err(e) = switch_by_api(key, show) {
-        println!("switch_by_api {} → {} 失败: {}", key, policy_value, e);
+    } else {
+        switch_by_api(key, show)
     }
 }
 
 /// 显示某个常用文件夹
-///
-pub fn show<T: AsRef<str>>(key: T) {
+pub fn show<T: AsRef<str>>(key: T) -> Result<(), Box<dyn Error>> {
     switch_by_cmd(key.as_ref(), true)
 }
 
 /// 隐藏某个常用文件夹
-/// reg add "HKEY_LOCAL_MACHINE\SOFTWARE\MyApp" /v SettingName /t REG_SZ /d "ValueData" /f
-pub fn hide<T: AsRef<str>>(key: T) {
+pub fn hide<T: AsRef<str>>(key: T) -> Result<(), Box<dyn Error>> {
     switch_by_cmd(key.as_ref(), false)
 }
 

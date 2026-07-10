@@ -3,89 +3,84 @@ use crate::port_forwarding::cmd::{PORT_PROXY_V4TOV4, RESET_CMD, add_cmd, del_cmd
 use crate::utils::{Println, check_ipv4_by_string, run_commands, RunCommandOptions};
 use ansi_term::Color::Red;
 
+fn run_portproxy(cmd: &str) -> Result<(), String> {
+    let out = run_commands(cmd, RunCommandOptions::new(true, true, true))?;
+    out.print_ln();
+    Ok(())
+}
+
 ///
 /// netsh interface portproxy add v4tov4 listenport=40005 listenaddress=10.0.0.113 connectaddress=192.168.21.4 connectport=22
 ///
-pub fn add(forward: &PortForwarding) {
-    let cmd = add_cmd(forward);
-    let out = run_commands(&cmd, RunCommandOptions::new(true, true, true));
-    out.print_ln();
+pub fn add(forward: &PortForwarding) -> Result<(), String> {
+    run_portproxy(&add_cmd(forward))
 }
 
 /// 删除一条项目(需要管理员权限)
-/// netsh interface portproxy del v4tov4 listenport listenaddress
-/// 此上下文中的命令:
-/// delete v4tov4  - 删除通过 IPv4 的 IPv4 和代理连接到的侦听项目。
-/// delete v4tov6  - 删除通过 IPv6 的 IPv4 和代理连接到的侦听项目。
-/// delete v6tov4  - 删除通过 IPv4 的 IPv6 和代理连接到的侦听项目。
-/// delete v6tov6  - 删除通过 IPv6 的 IPv6 和代理连接到的侦听项目。
-/// Require administrator privileges to execute
-pub fn del(address: &String, port: &i64) {
-    let cmd = del_cmd(address, port);
-    let out = run_commands(&cmd, RunCommandOptions::new(true, true, true));
-    out.print_ln();
+pub fn del(address: &String, port: &i64) -> Result<(), String> {
+    run_portproxy(&del_cmd(address, port))
 }
 
-/// 命令行
 /// 重置(需要管理员权限)
-/// Require administrator privileges to execute
-pub fn reset() {
-    let cmd = RESET_CMD;
-    let out = run_commands(&cmd.to_string(), RunCommandOptions::new(true, true, true));
-    out.print_ln();
+pub fn reset() -> Result<(), String> {
+    run_portproxy(RESET_CMD)
 }
 
 ///设置代理
-pub fn set(port: &PortForwarding) {
-    let cmd = set_cmd(port);
-    let out = run_commands(&cmd, RunCommandOptions::new(true, true, true));
-    out.print_ln();
+pub fn set(port: &PortForwarding) -> Result<(), String> {
+    run_portproxy(&set_cmd(port))
 }
 
 /// 获取所有的ipv4 to ipv4代理
-/// ```
-/// use windows_tool::port_forwarding::command::get_all_ipv4_to_ipv4_port_proxy;
-/// let pp = get_all_ipv4_to_ipv4_port_proxy();
-/// println!("pp {:?}",pp);
-/// ```
 pub fn get_all_ipv4_to_ipv4_port_proxy() -> Vec<PortForwarding> {
-    let out = run_commands(PORT_PROXY_V4TOV4, RunCommandOptions::new(true, false, true));
-    out.print_ln();
-    from_cmd_load_port_forwarding(&out.to_string())
+    match run_commands(PORT_PROXY_V4TOV4, RunCommandOptions::new(true, false, true)) {
+        Ok(out) => {
+            out.print_ln();
+            from_cmd_load_port_forwarding(&out.to_string())
+        }
+        Err(e) => {
+            println!("get_all_ipv4_to_ipv4_port_proxy failed: {}", e);
+            Vec::new()
+        }
+    }
 }
 
 /// 查询端口代理列表但不打印 netsh 输出（用于文件备份等，避免刷屏或干扰日志）。
 pub fn get_all_ipv4_to_ipv4_port_proxy_silent() -> Vec<PortForwarding> {
-    let out = run_commands(PORT_PROXY_V4TOV4, RunCommandOptions::new(true, false, false));
-    from_cmd_load_port_forwarding(&out.to_string())
+    match run_commands(PORT_PROXY_V4TOV4, RunCommandOptions::new(true, false, false)) {
+        Ok(out) => from_cmd_load_port_forwarding(&out.to_string()),
+        Err(e) => {
+            println!("get_all_ipv4_to_ipv4_port_proxy_silent failed: {}", e);
+            Vec::new()
+        }
+    }
 }
 
-/// 侦听 ipv4:                 连接到 ipv4:
-///
-/// 地址            端口        地址            端口
-/// --------------- ----------  --------------- ----------
-/// 10.0.0.113      40005       192.168.21.4    22
-/// 10.0.0.113      4000        192.168.21.4    22
-/// 10.0.0.113      400         192.168.21.4    22
 pub fn from_cmd_load_port_forwarding(cmd_string: &String) -> Vec<PortForwarding> {
     let mut res: Vec<PortForwarding> = Vec::new();
     for line in cmd_string.lines() {
         let line = line.trim_end();
         let data: Vec<String> = line.split_whitespace().map(|x| x.to_string()).collect();
         if data.len() == 4 {
-            let listen_address = data.get(0).unwrap().to_string();
-            let listen_port = data.get(1).unwrap().parse::<i64>();
-            let connect_address = data.get(2).unwrap().to_string();
-            let connect_port = data.get(3).unwrap().parse::<i64>();
+            let listen_address = data[0].clone();
+            let listen_port = data[1].parse::<i64>();
+            let connect_address = data[2].clone();
+            let connect_port = data[3].parse::<i64>();
 
             let address_is_ok =
                 check_ipv4_by_string(&listen_address) && check_ipv4_by_string(&connect_address);
             let port_is_ok = listen_port.is_ok() && connect_port.is_ok();
 
             if address_is_ok && port_is_ok {
+                let listen_port = listen_port.unwrap();
+                let connect_port = connect_port.unwrap();
+                if !(1..=65535).contains(&listen_port) || !(1..=65535).contains(&connect_port) {
+                    println!("Invalid port range {}", Red.paint(line));
+                    continue;
+                }
                 let port = PortForwarding::new(
-                    (listen_address, listen_port.unwrap()),
-                    (connect_address, connect_port.unwrap()),
+                    (listen_address, listen_port),
+                    (connect_address, connect_port),
                 );
                 res.push(port);
             } else if check_ipv4_by_string(&listen_address) {
@@ -98,10 +93,18 @@ pub fn from_cmd_load_port_forwarding(cmd_string: &String) -> Vec<PortForwarding>
 }
 
 /// 从输入的cmd字符串中获取信息
-/// 通过解析字符串并拆分来获取所有ipv4的端口转发
-pub fn from_cmd_data(data: Vec<String>) -> PortForwarding {
-    assert_eq!(data.len(), 4, "需传入4个数据! ");
-    let from = (data[0].to_string(), data[1].parse::<i64>().unwrap());
-    let to = (data[2].to_string(), data[3].parse::<i64>().unwrap());
-    PortForwarding::new(from, to)
+pub fn from_cmd_data(data: Vec<String>) -> Result<PortForwarding, String> {
+    if data.len() != 4 {
+        return Err("需传入4个数据".to_string());
+    }
+    let listen_port = data[1]
+        .parse::<i64>()
+        .map_err(|e| format!("listen port: {}", e))?;
+    let connect_port = data[3]
+        .parse::<i64>()
+        .map_err(|e| format!("connect port: {}", e))?;
+    Ok(PortForwarding::new(
+        (data[0].clone(), listen_port),
+        (data[2].clone(), connect_port),
+    ))
 }

@@ -52,11 +52,11 @@ impl PortForwarding {
         command::get_all_ipv4_to_ipv4_port_proxy()
     }
     /// 删除所有的端口转发
-    pub fn reset() {
+    pub fn reset() -> Result<(), String> {
         command::reset()
     }
     ///设置单个端口转发
-    pub fn set(po: &PortForwarding) {
+    pub fn set(po: &PortForwarding) -> Result<(), String> {
         command::set(po)
     }
 
@@ -67,7 +67,7 @@ impl PortForwarding {
         PortForwarding { listen, connect }
     }
     /// 添加多条端口转发
-    pub fn new_multiple(list: Vec<PortForwarding>) {
+    pub fn new_multiple(list: Vec<PortForwarding>) -> Result<(), String> {
         let vs = list
             .into_iter()
             .filter(PortForwarding::check_ipv_address) //检查地址是否正确
@@ -75,18 +75,22 @@ impl PortForwarding {
             .into_iter()
             .map(|x| add_cmd(&x)) //转换为cmd
             .collect::<Vec<String>>();
-        run_multiple_commands(&vs, RunCommandOptions::new(false, true, true));
+        if vs.is_empty() {
+            return Ok(());
+        }
+        run_multiple_commands(&vs, RunCommandOptions::new(false, true, true))?;
+        Ok(())
     }
 
     /// 转发端口
-    pub fn forward(&self) {
-        command::add(self);
+    pub fn forward(&self) -> Result<(), String> {
+        command::add(self)
     }
 
     /// 删除端口转发
-    pub fn del(&self) {
+    pub fn del(&self) -> Result<(), String> {
         let listen = &self.listen;
-        command::del(&listen.address, &listen.port);
+        command::del(&listen.address, &listen.port)
     }
 
     /// 检查当前转发是否已经在转发列表内
@@ -103,7 +107,10 @@ impl PortForwarding {
 
     /// 检查IPV地址是否正确
     pub fn check_ipv_address(&self) -> bool {
-        check_ipv4_by_string(&self.listen.address) && check_ipv4_by_string(&self.connect.address)
+        check_ipv4_by_string(&self.listen.address)
+            && check_ipv4_by_string(&self.connect.address)
+            && (1..=65535).contains(&self.listen.port)
+            && (1..=65535).contains(&self.connect.port)
     }
 }
 
